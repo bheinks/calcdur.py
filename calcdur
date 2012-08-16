@@ -1,0 +1,111 @@
+#!/usr/bin/python
+
+import argparse
+import datetime
+import fcntl
+import re
+import subprocess
+
+from os import O_NONBLOCK 
+from time import sleep
+
+def main():
+    parser = argparse.ArgumentParser(
+        description = "Calculate the total duration of FFmpeg-compatible media\
+                file(s)."
+    )
+
+    parser.add_argument(
+        "files", metavar = "FILE",
+        help = "valid FFmpeg video file(s)",
+        nargs = "+"
+    )
+
+    parser.add_argument(
+        "-v", "--verbose",
+        help = "output file information",
+        action = "store_true"
+    )
+
+    args = parser.parse_args()
+    regex = r"Duration:.+(\d\d:\d\d:\d\d\.\d\d)"
+    durations = []
+
+    for file_name in args.files:
+        output = get_output(file_name)
+        match = re.search(regex, output)
+
+        if match:
+            duration = match.group(1)
+
+            if args.verbose:
+                print(file_name, duration, sep = "\t")
+
+            durations.append(duration)
+            
+        else:
+            print("Error: ffmpeg data not found for file:", file_name)
+
+    if args.verbose:
+        print("\nArgument count:", len(args.files))
+        print("Files successfully processed:", len(durations))
+
+    # manually format total from seconds due to lack of timedelta.strftime()
+    total = calculate_total(durations).total_seconds()
+
+    minutes, seconds = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+
+    print("\nTotal duration: {:.0f} days, {:.0f} hours, {:.0f} minutes, {:.2f}\
+            seconds".format(days, hours, minutes, seconds))
+    
+def get_output(file_name):
+    # jump through hoops in order to capture ffmpeg output from stderr
+    process = subprocess.Popen(
+        ["ffmpeg", "-i", file_name], 
+        stderr = subprocess.PIPE,
+        close_fds = True
+    )
+    
+    fcntl.fcntl(
+        process.stderr.fileno(),
+        fcntl.F_SETFL,
+        fcntl.fcntl(process.stderr.fileno(), fcntl.F_GETFL) | O_NONBLOCK,
+    )
+    
+    output = ""
+    iterations = 0
+
+    # ensure the output contains "Duration"
+    while(not "start" in output and iterations < 100):
+        buffer_read = str(process.stderr.read())
+        iterations += 1
+
+        if(buffer_read != "None"):
+            output += buffer_read
+
+        #print(iterations)
+        sleep(.01)
+
+    return output
+
+def calculate_total(durations):
+    total = datetime.timedelta()
+
+    for duration in durations:
+        time = datetime.datetime.strptime(duration, "%H:%M:%S.%f")
+
+        time_delta = datetime.timedelta(
+            hours = time.hour,
+            minutes = time.minute,
+            seconds = time.second,
+            microseconds = time.microsecond
+        )
+
+        total += time_delta
+
+    return total
+
+if __name__ == "__main__":
+    main()
