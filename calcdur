@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+# calcdur.py - Calculate the total duration of FFmpeg-compatible media files.
+# Version: 1.0
+# Author: Brett Heinkel <bheinks@gmail.com>
+
 import argparse
 import datetime
 import fcntl
